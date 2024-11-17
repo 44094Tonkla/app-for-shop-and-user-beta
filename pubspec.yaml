@@ -1,0 +1,38 @@
+name: appmyskill
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.5.3
+
+dependencies:
+  flutter:
+    sdk: flutter
+  flutter_launcher_icons: ^0.14.1
+  cupertino_icons: ^1.0.8
+  http: ^0.13.3   # Moved here to keep all dependencies in one section
+  intl: ^0.17.0
+  
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter_icons:
+  android: true
+  ios: true
+  image_path: "image/logo.png"  # Make sure there are no spaces in the filename
+  adaptive_icon_background: "#ebf6fa"
+  adaptive_icon_foreground: "image/logo.png"  # Ensure this matches the logo file
+
+flutter:
+  uses-material-design: true
+  assets:
+    - image/logo.png  # Ensure the filename matches
+    - images/assets/picture1.jpg
+    - images/assets/picture2.jpg
+    - images/assets/picture3.jpg
+    - images/assets/picture4.jpg
