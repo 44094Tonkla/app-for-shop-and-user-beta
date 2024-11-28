@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:http/http.dart' as http;
-import 'dart:convert'; // สำหรับการจัดการกับ JSON
+import 'dart:convert';
 import 'Exchangerate.dart';
 import 'MoneyBox.dart';
 import 'FoodMenu.dart';
@@ -10,6 +10,8 @@ void main() {
 }
 
 class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
@@ -21,14 +23,17 @@ class MyApp extends StatelessWidget {
 }
 
 class MyHomePage extends StatefulWidget {
+  const MyHomePage({super.key});
+
   @override
   _MyHomePageState createState() => _MyHomePageState();
 }
 
 class _MyHomePageState extends State<MyHomePage> {
   ExchangeRate? _dataFromAPI;
-  double balance = 5000; // เงินคงเหลือเริ่มต้น
+  double balance = 5000;
   List<FoodMenu> selectedItems = [];
+  double usdBalance = 0.0;
 
   @override
   void initState() {
@@ -42,6 +47,7 @@ class _MyHomePageState extends State<MyHomePage> {
       var response = await http.get(url);
       if (response.statusCode == 200) {
         _dataFromAPI = exchangeRateFromJson(response.body);
+        setState(() {});
         return _dataFromAPI;
       } else {
         throw Exception('Failed to load exchange rate');
@@ -49,6 +55,72 @@ class _MyHomePageState extends State<MyHomePage> {
     } catch (e) {
       print("Error: $e");
       return null;
+    }
+  }
+
+  Future<void> sendFoodSelectionToBackend(String foodName, String price) async {
+    var url = Uri.parse("https://your-backend-api.com/food-selection");
+    try {
+      var response = await http.post(
+        url,
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: jsonEncode({
+          'food_name': foodName,
+          'price': price,
+        }),
+      );
+
+      if (response.statusCode == 200) {
+        print("ส่งคำสั่งสำเร็จ");
+      } else {
+        print("เกิดข้อผิดพลาดในการส่งคำสั่ง");
+      }
+    } catch (e) {
+      print("Error sending data: $e");
+    }
+  }
+
+  // เพิ่มฟังก์ชันแปลงเงินและอัปเดตยอดเงิน USD
+  void updateAccountBalances(double totalAmount) {
+    // ตรวจสอบว่ามีอัตราแลกเปลี่ยนหรือไม่
+    if (_dataFromAPI != null && _dataFromAPI?.rates != null) {
+      // แปลงจำนวนเงินบาทเป็น USD
+      double usdRate =
+          _dataFromAPI!.rates['USD'] ?? 0.03; // ใช้ค่าดีฟอลต์หากไม่มีข้อมูล
+      double usdAmount = totalAmount * usdRate;
+
+      // อัปเดตยอดเงินใน USD
+      setState(() {
+        usdBalance += usdAmount;
+        balance -= totalAmount;
+      });
+
+      // แสดงข้อความแจ้งเตือน
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'ชำระเงินสำเร็จ! คุณได้รับเงิน \$${usdAmount.toStringAsFixed(2)}'),
+          duration: Duration(seconds: 3),
+        ),
+      );
+    } else {
+      // กรณีไม่มีอัตราแลกเปลี่ยน ใช้อัตราคงที่
+      double usdAmount = totalAmount * 0.05; // ใช้อัตราประมาณ 1 USD = 33 THB
+
+      setState(() {
+        usdBalance += usdAmount;
+        balance -= totalAmount;
+      });
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(
+              'ชำระเงินสำเร็จ! คุณได้รับเงิน \$${usdAmount.toStringAsFixed(2)} (อัตราโดยประมาณ)'),
+          duration: Duration(seconds: 3),
+        ),
+      );
     }
   }
 
@@ -63,8 +135,10 @@ class _MyHomePageState extends State<MyHomePage> {
 
     return Scaffold(
       appBar: AppBar(
-        title: Text("แปลงสกุลเงินและเมนูอาหาร",
-            style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold)),
+        title: Text("แอปฝั่งคนซื้อ",
+            style: TextStyle(
+                color: const Color.fromARGB(255, 3, 3, 3),
+                fontWeight: FontWeight.bold)),
       ),
       body: SingleChildScrollView(
         child: Column(
@@ -101,6 +175,23 @@ class _MyHomePageState extends State<MyHomePage> {
               child: Text("ไปหน้าบัญชีของฉัน"),
             ),
             ElevatedButton(
+              onPressed: () async {
+                final updatedUSDAccountBalance = await Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => MyUSDAccountPage(
+                        balance: usdBalance, exchangeRate: _dataFromAPI),
+                  ),
+                );
+                if (updatedUSDAccountBalance != null) {
+                  setState(() {
+                    usdBalance = updatedUSDAccountBalance;
+                  });
+                }
+              },
+              child: Text("ไปหน้าบัญชี USD"),
+            ),
+            ElevatedButton(
               onPressed: () {
                 Navigator.push(
                   context,
@@ -108,9 +199,15 @@ class _MyHomePageState extends State<MyHomePage> {
                     builder: (context) => CartPage(
                       selectedItems: selectedItems,
                       currentBalance: balance,
+                      exchangeRate: _dataFromAPI,
                       updateBalance: (newBalance) {
                         setState(() {
                           balance = newBalance;
+                        });
+                      },
+                      updateUSDBalance: (newUSDBalance) {
+                        setState(() {
+                          usdBalance = newUSDBalance;
                         });
                       },
                       clearCart: (newCart) {
@@ -118,6 +215,8 @@ class _MyHomePageState extends State<MyHomePage> {
                           selectedItems = newCart;
                         });
                       },
+                      updateAccountBalances:
+                          updateAccountBalances, // เพิ่มฟังก์ชันใหม่
                     ),
                   ),
                 );
@@ -165,7 +264,7 @@ class _MyHomePageState extends State<MyHomePage> {
             return Text('Error: ${snapshot.error}');
           }
         }
-        return LinearProgressIndicator();
+        return Center(child: LinearProgressIndicator());
       },
     );
   }
@@ -193,21 +292,9 @@ class _MyHomePageState extends State<MyHomePage> {
           return;
         }
 
-        if (priceValue > balance) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(
-              content: Text('ยอดเงินไม่พอสำหรับการซื้อ $name'),
-              duration: Duration(seconds: 2),
-            ),
-          );
-          return;
-        }
-
         sendFoodSelectionToBackend(name, price);
         setState(() {
-          balance -= priceValue;
-          selectedItems
-              .add(FoodMenu(name, price, imagePath)); // เพิ่มอาหารที่เลือก
+          selectedItems.add(FoodMenu(name, price, imagePath));
         });
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
@@ -244,36 +331,12 @@ class _MyHomePageState extends State<MyHomePage> {
       ),
     );
   }
-
-  Future<void> sendFoodSelectionToBackend(String foodName, String price) async {
-    var url = Uri.parse("https://your-backend-api.com/food-selection");
-    try {
-      var response = await http.post(
-        url,
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: jsonEncode({
-          'food_name': foodName,
-          'price': price,
-        }),
-      );
-
-      if (response.statusCode == 200) {
-        print("ส่งคำสั่งสำเร็จ");
-      } else {
-        print("เกิดข้อผิดพลาดในการส่งคำสั่ง");
-      }
-    } catch (e) {
-      print("Error sending data: $e");
-    }
-  }
 }
 
 class MyAccountPage extends StatefulWidget {
   final double balance;
 
-  MyAccountPage({required this.balance});
+  const MyAccountPage({super.key, required this.balance});
 
   @override
   _MyAccountPageState createState() => _MyAccountPageState();
@@ -290,38 +353,85 @@ class _MyAccountPageState extends State<MyAccountPage> {
 
   void resetBalance() {
     setState(() {
-      currentBalance = 5000; // รีเซ็ตยอดเงิน
+      currentBalance = 5000; // Reset to original balance
     });
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text("รีเซ็ตยอดเงินสำเร็จ"),
+        content: Text('ยอดเงินถูกรีเซ็ตแล้ว'),
         duration: Duration(seconds: 2),
       ),
     );
-    Navigator.pop(context, currentBalance); // ส่งค่ากลับไปยังหน้าแรก
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: Text("บัญชีของฉัน"),
+        title: Text("บัญชีของคุณ"),
+        actions: [
+          IconButton(
+            icon: Icon(Icons.refresh),
+            onPressed: resetBalance,
+            tooltip: 'รีเซ็ตยอดเงิน',
+          ),
+        ],
+      ),
+      body: Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Text("ยอดคงเหลือในบัญชี: ฿$currentBalance",
+                style: TextStyle(fontSize: 24)),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.pop(context, currentBalance);
+              },
+              child: Text("กลับไปที่หน้าหลัก"),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class MyUSDAccountPage extends StatefulWidget {
+  final double balance;
+  final ExchangeRate? exchangeRate;
+
+  const MyUSDAccountPage({super.key, required this.balance, this.exchangeRate});
+
+  @override
+  _MyUSDAccountPageState createState() => _MyUSDAccountPageState();
+}
+
+class _MyUSDAccountPageState extends State<MyUSDAccountPage> {
+  late double currentUSDAccountBalance;
+
+  @override
+  void initState() {
+    super.initState();
+    currentUSDAccountBalance = widget.balance;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("บัญชี USD ของคุณ"),
       ),
       body: Center(
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Text(
-              "ยอดเงินของคุณคือ: ฿$currentBalance",
-              style: TextStyle(
-                fontSize: 40, // ปรับขนาดตัวเลขให้ใหญ่ขึ้น
-                fontWeight: FontWeight.bold,
-              ),
-            ),
-            SizedBox(height: 20),
+                "ยอดคงเหลือในบัญชี USD: \$${currentUSDAccountBalance.toStringAsFixed(2)}",
+                style: TextStyle(fontSize: 24)),
             ElevatedButton(
-              onPressed: resetBalance,
-              child: Text("รีเซ็ตยอดเงิน"),
+              onPressed: () {
+                Navigator.pop(context, currentUSDAccountBalance);
+              },
+              child: Text("กลับไปที่หน้าหลัก"),
             ),
           ],
         ),
@@ -333,14 +443,21 @@ class _MyAccountPageState extends State<MyAccountPage> {
 class CartPage extends StatefulWidget {
   final List<FoodMenu> selectedItems;
   final double currentBalance;
+  final ExchangeRate? exchangeRate;
   final Function(double) updateBalance;
+  final Function(double) updateUSDBalance;
   final Function(List<FoodMenu>) clearCart;
+  final Function(double) updateAccountBalances;
 
-  CartPage({
+  const CartPage({
+    super.key,
     required this.selectedItems,
     required this.currentBalance,
+    required this.exchangeRate,
     required this.updateBalance,
+    required this.updateUSDBalance,
     required this.clearCart,
+    required this.updateAccountBalances,
   });
 
   @override
@@ -348,10 +465,26 @@ class CartPage extends StatefulWidget {
 }
 
 class _CartPageState extends State<CartPage> {
+  late List<FoodMenu> selectedItems;
+
+  @override
+  void initState() {
+    super.initState();
+    selectedItems = List.from(widget.selectedItems);
+  }
+
+  void _removeItem(FoodMenu item) {
+    setState(() {
+      selectedItems.remove(item);
+      widget.clearCart(selectedItems);
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
-    double totalPrice = widget.selectedItems
-        .fold(0, (sum, item) => sum + double.parse(item.price));
+    double total = selectedItems.fold(0.0, (sum, item) {
+      return sum + double.parse(item.price);
+    });
 
     return Scaffold(
       appBar: AppBar(
@@ -359,40 +492,101 @@ class _CartPageState extends State<CartPage> {
       ),
       body: Column(
         children: [
+          Text("สินค้าที่เลือก:", style: TextStyle(fontSize: 24)),
           Expanded(
-            child: ListView.builder(
-              itemCount: widget.selectedItems.length,
-              itemBuilder: (context, index) {
-                final item = widget.selectedItems[index];
-                return ListTile(
-                  title: Text(item.name),
-                  subtitle: Text("ราคา: ฿${item.price}"),
-                );
-              },
-            ),
+            child: selectedItems.isEmpty
+                ? Center(
+                    child: Text("ตะกร้าสินค้าว่าง",
+                        style: TextStyle(fontSize: 18)))
+                : ListView.builder(
+                    itemCount: selectedItems.length,
+                    itemBuilder: (context, index) {
+                      final item = selectedItems[index];
+                      return ListTile(
+                        leading: Image.asset(
+                          item.img,
+                          width: 50,
+                          height: 50,
+                          fit: BoxFit.cover,
+                        ),
+                        title: Text(item.name),
+                        subtitle: Text("ราคา ${item.price} บาท"),
+                        trailing: IconButton(
+                          icon: Icon(Icons.delete, color: Colors.red),
+                          onPressed: () => _removeItem(item),
+                        ),
+                      );
+                    },
+                  ),
           ),
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
               children: [
-                Text("ยอดรวม: ฿$totalPrice", style: TextStyle(fontSize: 24)),
+                Text(
+                  "ยอดรวม: $total บาท",
+                  style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                ),
                 SizedBox(height: 20),
-                ElevatedButton(
-                  onPressed: () {
-                    if (widget.currentBalance >= totalPrice) {
-                      widget.updateBalance(widget.currentBalance - totalPrice);
-                      widget.clearCart([]);
-                      Navigator.pop(context);
-                    } else {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        SnackBar(
-                          content: Text("ยอดเงินไม่พอสำหรับการซื้อ"),
-                          duration: Duration(seconds: 2),
-                        ),
-                      );
-                    }
-                  },
-                  child: Text("ยืนยันการซื้อ"),
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: [
+                    ElevatedButton(
+                      onPressed: selectedItems.isEmpty
+                          ? null
+                          : () {
+                              setState(() {
+                                selectedItems.clear();
+                                widget.clearCart([]);
+                              });
+                            },
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.red,
+                        disabledBackgroundColor: Colors.grey,
+                      ),
+                      child: Text("ล้างตะกร้า"),
+                    ),
+                    ElevatedButton(
+                      onPressed:
+                          selectedItems.isEmpty || widget.currentBalance < total
+                              ? null
+                              : () {
+                                  // ตรวจสอบยอดเงินคงเหลือ
+                                  if (widget.currentBalance >= total) {
+                                    // อัปเดตยอดเงิน
+                                    widget.updateBalance(
+                                        widget.currentBalance - total);
+
+                                    // ส่งข้อมูลการชำระเงิน
+                                    widget.updateAccountBalances(total);
+
+                                    // ล้างตะกร้า
+                                    widget.clearCart([]);
+
+                                    // แสดงข้อความแจ้งเตือน
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('ชำระเงินสำเร็จ!'),
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+
+                                    // กลับไปหน้าหลัก
+                                    Navigator.pop(context);
+                                  } else {
+                                    // แสดงข้อความเตือนเมื่อเงินไม่พอ
+                                    ScaffoldMessenger.of(context).showSnackBar(
+                                      SnackBar(
+                                        content: Text('ยอดเงินไม่เพียงพอ'),
+                                        backgroundColor: Colors.red,
+                                        duration: Duration(seconds: 2),
+                                      ),
+                                    );
+                                  }
+                                },
+                      child: Text("ชำระเงิน"),
+                    ),
+                  ],
                 ),
               ],
             ),

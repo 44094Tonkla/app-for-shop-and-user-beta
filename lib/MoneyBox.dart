@@ -8,7 +8,8 @@ class MoneyBox extends StatelessWidget {
   final double size; // Size of the box
 
   // Constructor
-  MoneyBox({
+  const MoneyBox({
+    super.key,
     required this.title,
     required this.amount,
     required this.color,
